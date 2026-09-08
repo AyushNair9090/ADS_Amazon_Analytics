@@ -1,0 +1,5 @@
+outs:
+- md5: f7de9097b39ce1a3832ca1935d5c7efb
+  size: 275708749
+  hash: md5
+  path: amazon_transactions_clean.csv

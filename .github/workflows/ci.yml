@@ -41,6 +41,7 @@ jobs:
         if: ${{ env.GDRIVE_CREDENTIALS_DATA != '' }}
         run: |
           pip install "dvc[gdrive]"
+          pip install "pyopenssl==24.2.1" "cryptography>=41.0.5,<44"
           dvc remote modify --local $DVC_REMOTE gdrive_use_service_account true
           dvc pull models/best_model.pkl.dvc
       - name: Run tests
@@ -69,6 +70,7 @@ jobs:
         if: ${{ env.GDRIVE_CREDENTIALS_DATA != '' }}
         run: |
           pip install "dvc[gdrive]"
+          pip install "pyopenssl==24.2.1" "cryptography>=41.0.5,<44"
           dvc remote modify --local $DVC_REMOTE gdrive_use_service_account true
           dvc pull models/best_model.pkl.dvc
       - name: Build Docker image

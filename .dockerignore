@@ -1,0 +1,7 @@
+.git
+.github
+.dvc/cache
+.dvc/tmp
+tests
+__pycache__
+*.csv

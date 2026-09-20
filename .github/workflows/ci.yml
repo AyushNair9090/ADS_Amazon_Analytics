@@ -1,0 +1,98 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.13"
+  IMAGE_NAME: amazon-return-api
+  DVC_REMOTE: myremote
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install flake8
+      - name: Lint
+        run: flake8 app.py tests
+
+  test:
+    needs: lint
+    runs-on: ubuntu-latest
+    env:
+      GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt pytest httpx
+      - name: Pull model with DVC
+        if: ${{ env.GDRIVE_CREDENTIALS_DATA != '' }}
+        run: |
+          pip install "dvc[gdrive]"
+          dvc remote modify --local $DVC_REMOTE gdrive_use_service_account true
+          dvc pull models/best_model.pkl.dvc
+      - name: Run tests
+        run: pytest -v --junitxml=test-results.xml
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results.xml
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      GDRIVE_CREDENTIALS_DATA: ${{ secrets.GDRIVE_CREDENTIALS_DATA }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Pull model with DVC
+        if: ${{ env.GDRIVE_CREDENTIALS_DATA != '' }}
+        run: |
+          pip install "dvc[gdrive]"
+          dvc remote modify --local $DVC_REMOTE gdrive_use_service_account true
+          dvc pull models/best_model.pkl.dvc
+      - name: Build Docker image
+        run: docker build -t $IMAGE_NAME:${{ github.sha }} .
+      - name: Smoke test container
+        run: |
+          docker run -d -p 8000:8000 --name api $IMAGE_NAME:${{ github.sha }}
+          for i in $(seq 1 30); do curl -sf http://localhost:8000/ && break; sleep 2; done
+          curl --fail http://localhost:8000/
+          curl --fail -X POST http://localhost:8000/predict \
+            -H "Content-Type: application/json" \
+            -d @tests/sample_payload.json
+          docker logs api
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Push image (deploy)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          IMAGE=ghcr.io/$OWNER/$IMAGE_NAME
+          docker tag $IMAGE_NAME:${{ github.sha }} $IMAGE:latest
+          docker push $IMAGE:latest

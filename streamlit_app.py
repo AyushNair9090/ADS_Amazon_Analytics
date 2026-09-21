@@ -80,7 +80,7 @@ FILTER_OPTIONS = get_filter_options(df)
 
 @st.cache_resource
 def load_model():
-    return joblib.load("models/best_model.pkl")
+    return joblib.load("models/streamlit_model.pkl")
 
 
 model = load_model()
